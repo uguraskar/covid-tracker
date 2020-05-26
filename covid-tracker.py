@@ -49,18 +49,25 @@ TCDF = TurkeyCovidDF.drop('Lat','Long')
 #TCDF.show()
 
 PUPTCDF = TCDF.toPandas().set_index(['Country/Region','Province/State']).transpose()
-PUPTCDF['Tarih'] = PUPTCDF.index
+PUPTCDF['Date'] = PUPTCDF.index
 colnames = PUPTCDF.columns.tolist()
 colnames = colnames[-1:] + colnames[:-1]
 PUPTCDF = PUPTCDF[colnames]
 PUPTCDF.reset_index(drop=True, inplace=True)
 
-PUPTCDF.Tarih = pd.to_datetime(PUPTCDF.Tarih).dt.strftime('%d/%m/%Y')
+PUPTCDF.Date = pd.to_datetime(PUPTCDF.Date).dt.strftime('%d/%m/%Y') #Tarihi ISO formatından DD/MM/YYYY ye çeviriyor
 print(PUPTCDF)
 #UPTCDF = pandas_to_spark(PUPTCDF)
 #UPTCDF.show()
 
-PUPTCDF.to_excel('turkey_covid_dataset.xlsx', engine='xlsxwriter')
+print(PUPTCDF.info(verbose=True))
+#print(colnames)
+first_tuple_elements = [a_tuple[0] for a_tuple in colnames]
+#print(first_tuple_elements)
+PUPTCDF.to_excel('ww_city_covid_dataset.xlsx', engine='xlsxwriter')
+PUPTCDF.columns = first_tuple_elements
+CPUPTCDF = PUPTCDF.groupby(level=0, axis=1).sum()
+CPUPTCDF.to_excel('ww_country_covid_dataset.xlsx', engine='xlsxwriter')
 
-plt.plot(PUPTCDF['Tarih'], PUPTCDF['Turkey'])
-plt.show()
+#plt.plot(PUPTCDF['Date'], PUPTCDF['Turkey'])
+#plt.show()
