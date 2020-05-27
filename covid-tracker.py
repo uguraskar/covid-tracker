@@ -4,6 +4,7 @@ from pyspark.sql.types import DateType, LongType, IntegerType, FloatType, String
 from urllib.request import urlopen
 import matplotlib.pyplot as plt
 import pandas as pd
+import json
 
 def equivalent_type(f):
     if f == 'datetime64[ns]': return DateType()
@@ -27,6 +28,37 @@ def pandas_to_spark(pandas_df):
     p_schema = StructType(struct_list)
     return sqlContext.createDataFrame(pandas_df, p_schema)
 
+def country_converter(pandas_df, country_column):
+    pandas_df[country_column].replace({'Bolivia, Plurinational State of':'Bolivia',
+                          'Brunei Darussalam':'Brunei',
+                          'Burma':'Myanmar',
+                          'Cabo Verde':'Cape Verde',
+                          'Congo':'Republic of the Congo',
+                          'Congo (Brazzaville)':'Republic of the Congo',
+                          'Congo, the Democratic Republic of the':'Democratic Republic of the Congo',
+                          'Congo (Kinshasa)':'Democratic Republic of the Congo',
+                          'Côte d\'Ivoire':'Cote d\'Ivoire',
+                          'Czechia':'Czech Republic',
+                          'Swaziland':'Eswatini',
+                          'Holy See (Vatican City State)':'Holy See',
+                          'Iran, Islamic Republic of':'Iran',
+                          'Korea, Republic of':'South Korea',
+                          'Korea, South':'South Korea',
+                          'Lao People\'s Democratic Republic':'Laos',
+                          'Libyan Arab Jamahiriya':'Libya',
+                          'Moldova, Republic of':'Moldova',
+                          'Macedonia, the former Yugoslav Republic of':'North Macedonia',
+                          'Russian Federation':'Russia',
+                          'South Sudan':'Sudan',
+                          'Syrian Arab Republic':'Syria',
+                          'Taiwan, Province of China':'Taiwan',
+                          'Taiwan*':'Taiwan',
+                          'Tanzania, United Republic of':'Tanzania',
+                          'US':'United States',
+                          'Venezuela, Bolivarian Republic of':'Venezuela',
+                          'Viet Nam':'Vietnam'}, 
+                     inplace=True)
+
 conf = SparkConf().setMaster("local").setAppName("CovidTracker")
 sc = SparkContext(conf = conf)
 
@@ -38,15 +70,12 @@ sqlContext = SQLContext(sc)
 sdf = pandas_to_spark(pdf)
 
 sdf.createOrReplaceTempView('covid_data')
-#sdf.printSchema()
 
 TurkeyCovidDF = sqlContext.sql(
     """ SELECT * FROM covid_data --WHERE `Country/Region` = "Turkey" """
 )
-#TurkeyCovidDF.show()
 
 TCDF = TurkeyCovidDF.drop('Lat','Long')
-#TCDF.show()
 
 PUPTCDF = TCDF.toPandas().set_index(['Country/Region','Province/State']).transpose()
 PUPTCDF['Date'] = PUPTCDF.index
@@ -56,9 +85,7 @@ PUPTCDF = PUPTCDF[colnames]
 PUPTCDF.reset_index(drop=True, inplace=True)
 
 PUPTCDF.Date = pd.to_datetime(PUPTCDF.Date).dt.strftime('%d/%m/%Y') #Tarihi ISO formatından DD/MM/YYYY ye çeviriyor
-#print(PUPTCDF)
-#print(PUPTCDF.info(verbose=True))
-PUPTCDF.to_excel('ww_city_covid_dataset.xlsx', engine='xlsxwriter')
+PUPTCDF.to_excel('exports/Excel/Covid-Tracker/ww_city_covid_dataset.xlsx', engine='xlsxwriter')
 
 #Şehir kırılımını kaldırıp tüm şehirleri ülke altında toplamak
 first_tuple_elements = [a_tuple[0] for a_tuple in colnames]
@@ -67,11 +94,12 @@ CPUPTCDF = PUPTCDF.groupby(level=0, axis=1).sum()
 cols = CPUPTCDF.columns.tolist()
 cols.insert(0, cols.pop(cols.index('Date'))) 
 CPUPTCDF = CPUPTCDF.reindex(columns = cols) 
-CPUPTCDF.to_excel('ww_country_covid_dataset.xlsx', engine='xlsxwriter')
+CPUPTCDF.to_excel('exports/Excel/Covid-Tracker/ww_country_covid_dataset.xlsx', engine='xlsxwriter')
 
 cols.remove("Date")
 GCCCDF = pd.melt(CPUPTCDF, id_vars=['Date'], value_vars=cols, var_name='Country', value_name='Confirmed Case')
-GCCCDF.to_excel('ww_tt_covid_dataset.xlsx', engine='xlsxwriter')
+country_converter(GCCCDF, "Country")
+GCCCDF.to_excel('exports/Excel/Covid-Tracker/ww_cc_covid_dataset.xlsx', engine='xlsxwriter')
 
 #Ölen Caseler
 response = urlopen("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv")
@@ -91,7 +119,8 @@ cols.insert(0, cols.pop(cols.index('Date')))
 DPDF = DPDF.reindex(columns = cols)
 cols.remove("Date")
 DPDF = pd.melt(DPDF, id_vars=['Date'], value_vars=cols, var_name='Country', value_name='Deaths')
-DPDF.to_excel('ww_dg_covid_dataset.xlsx', engine='xlsxwriter')
+country_converter(DPDF, "Country")
+DPDF.to_excel('exports/Excel/Covid-Tracker/ww_dg_covid_dataset.xlsx', engine='xlsxwriter')
 
 #İyileşen Caseler
 response = urlopen("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_recovered_global.csv")
@@ -111,10 +140,27 @@ cols.insert(0, cols.pop(cols.index('Date')))
 RPDF = RPDF.reindex(columns = cols)
 cols.remove("Date")
 RPDF = pd.melt(RPDF, id_vars=['Date'], value_vars=cols, var_name='Country', value_name='Recovered')
-RPDF.to_excel('ww_rg_covid_dataset.xlsx', engine='xlsxwriter')
+country_converter(RPDF, "Country")
+RPDF.to_excel('exports/Excel/Covid-Tracker/ww_rg_covid_dataset.xlsx', engine='xlsxwriter')
+
+#Ülkeler
+response = urlopen("https://raw.githubusercontent.com/eesur/country-codes-lat-long/master/country-codes-lat-long-alpha3.json")
+response = json.loads(response.read().decode('utf-8'))
+response = response["ref_country_codes"]
+response = json.dumps(response)
+countries = pd.read_json(response)
+countries.rename(columns={'country':'Country'},inplace=True)
+country_converter(countries, "Country")
+non_standart_countries= [pd.Series(['West Bank and Gaza','none','none',-1,31.9522,35.2332], index=countries.columns),
+pd.Series(['Kosovo','XK','none',-1,42.602636,20.902977], index=countries.columns),
+pd.Series(['Diamond Princess','none','none',-1,0,0], index=countries.columns),
+pd.Series(['MS Zaandam','none','none',-1,0,0], index=countries.columns)]
+countries = countries.append(non_standart_countries, ignore_index=True)
+countries.to_excel('exports/Excel/Covid-Tracker/countries.xlsx', engine='xlsxwriter')
 
 #Total
-JCDF = GCCCDF.merge(DPDF, on=['Country','Date']).merge(RPDF, on=['Country','Date'])
-JCDF.to_excel('ww_total_covid_dataset.xlsx', engine='xlsxwriter')
+JCDF = GCCCDF.merge(DPDF, on=['Country','Date']).merge(RPDF, on=['Country','Date']).merge(countries, how='left', on='Country')
+JCDF.to_excel('exports/Excel/Covid-Tracker/ww_total_covid_dataset.xlsx', engine='xlsxwriter')
+JCDF.to_csv('exports/csv/Covid-Tracker/ww_total_covid_dataset.csv')
 #plt.plot(PUPTCDF['Date'], PUPTCDF['Turkey'])
 #plt.show()
